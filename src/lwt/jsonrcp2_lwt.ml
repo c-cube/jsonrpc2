@@ -1,5 +1,5 @@
 
-module IO
+module IO_lwt
   : Jsonrpc2.IO
     with type 'a t = 'a Lwt.t
      and type 'a Future.t = 'a Lwt.t
@@ -14,6 +14,7 @@ module IO
 
   module Future = struct
     type 'a t = 'a Lwt.t
+    type 'a wait = 'a Lwt.t
     type 'a promise = 'a Lwt.u
     let fullfill = Lwt.wakeup
     let cancel = Lwt.cancel
@@ -21,6 +22,7 @@ module IO
       let fut, promise = Lwt.wait () in
       (match on_cancel with Some f -> Lwt.on_cancel fut f | None -> ());
       fut, promise
+    let wait x = x
   end
 
   type lock = Lwt_mutex.t
@@ -47,5 +49,5 @@ module IO
       (fun e -> return (Error e))
 end
 
-include Jsonrpc2.Make(IO)
+include Jsonrpc2.Make(IO_lwt)
           

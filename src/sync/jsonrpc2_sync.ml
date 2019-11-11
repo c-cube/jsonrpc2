@@ -1,7 +1,7 @@
 
 (** {1 Blocking API for jsonrpc2} *)
 
-module IO
+module IO_sync
   : Jsonrpc2.IO
     with type 'a t = 'a
      and type in_channel = in_channel
@@ -20,12 +20,17 @@ module IO
       mutable res: 'a option;
       on_cancel: (unit -> unit);
     }
+    type 'a wait = 'a
     type 'a promise = 'a t
     let fullfill (p:_ promise) x = p.res <- Some x
     let cancel p = p.on_cancel ()
     let make ?(on_cancel=fun () -> ()) () =
       let r = {res=None; on_cancel;} in
       r, r
+
+    let wait r = match r.res with
+      | Some x -> x
+      | None -> failwith "jsonrpc2-sync: wait on unfilled promise"
   end
 
   type lock = Mutex.t
@@ -66,5 +71,5 @@ module IO
     with e -> Error e
 end
 
-include Jsonrpc2.Make(IO)
+include Jsonrpc2.Make(IO_sync)
           

@@ -3,7 +3,35 @@
 
 module J = Yojson.Basic
 
-type 'a printer = 'a -> Format.formatter -> unit
+type 'a printer = Format.formatter -> 'a -> unit
+
+module type FUTURE = sig
+  type 'a t
+  (** Future value *)
+
+  type 'a promise
+  (** How to fill an existing future with a value *)
+
+  val fullfill : 'a promise -> 'a -> unit
+  (** Fill a promise with a value. Behavior is not specified if this
+      is called several times *)
+
+  val cancel : _ t -> unit
+  (** Cancel a future. Does nothing if the promise is filled already
+      or if there's no meaningful notion of cancellation. *)
+
+  val make :
+    ?on_cancel:(unit -> unit) ->
+    unit ->
+    'a t * 'a promise
+    (** Make a future with the accompanying promise to fullfill it.
+        @param on_cancel if provided, call this function upon cancellation. *)
+
+  type 'a wait
+
+  val wait : 'a t -> 'a wait
+  (** Wait for the future to be filled *)
+end
 
 module type IO = sig
   type 'a t
@@ -16,28 +44,7 @@ module type IO = sig
   end
   include module type of Infix
 
-  module Future : sig
-    type 'a t
-    (** Future value *)
-
-    type 'a promise
-    (** How to fill an existing future with a value *)
-
-    val fullfill : 'a promise -> 'a -> unit
-    (** Fill a promise with a value. Behavior is not specified if this
-        is called several times *)
-
-    val cancel : _ t -> unit
-    (** Cancel a future. Does nothing if the promise is filled already
-        or if there's no meaningful notion of cancellation. *)
-
-    val make :
-      ?on_cancel:(unit -> unit) ->
-      unit ->
-      'a t * 'a promise
-      (** Make a future with the accompanying promise to fullfill it.
-          @param on_cancel if provided, call this function upon cancellation. *)
-  end
+  module Future : FUTURE with type 'a wait = 'a t
 
   type lock
 
@@ -75,22 +82,25 @@ module type S = sig
 
   (** {3 Declare methods available from the other side} *)
 
-  val declare_method :
-    t ->
-    string ->
-    (t -> params:json -> (json, string) result IO.Future.t) ->
-    unit
+  type method_ = 
+    (t -> params:json -> return:((json, string) result -> unit) -> unit)
+
+  val declare_method : t -> string -> method_ -> unit
   (** Add a method that can be called from the other side.
-      The method, when called, returns a future result, or future error. *)
+      The method, when called, {b must} at some point call its [return] paramter
+      with a result. *)
 
   (** {3 Send requests and notifications to the other side} *)
+
+  exception Jsonrpc2_error of int * string
+  (** Code + message *)
 
   type message
   (** Message sent to the other side *)
 
   val request :
     t -> meth:string -> params:json ->
-    message * (json, string) result IO.Future.t
+    message * (json, string) result IO.t
   (** Create a request message, for which an answer is expected. *)
 
   val notify : t -> meth:string -> params:json -> message
