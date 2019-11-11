@@ -83,7 +83,7 @@ module type S = sig
   (** {3 Declare methods available from the other side} *)
 
   type method_ = 
-    (t -> params:json -> return:((json, string) result -> unit) -> unit)
+    (t -> params:json option -> return:((json, string) result -> unit) -> unit)
 
   val declare_method : t -> string -> method_ -> unit
   (** Add a method that can be called from the other side.

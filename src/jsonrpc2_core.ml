@@ -40,10 +40,10 @@ module Protocol : sig
 
   val error : t -> code -> string -> message
 
-  val request : t -> meth:string -> params:json -> message * Id.t
+  val request : t -> meth:string -> params:json option -> message * Id.t
   (** Create a request message, for which an answer is expected. *)
 
-  val notify : t -> meth:string -> params:json -> message
+  val notify : t -> meth:string -> params:json option -> message
   (** Create a notification message, ie. no response is expected. *)
 
   (** Actions to be done next. This includes sending messages out
@@ -51,8 +51,8 @@ module Protocol : sig
   type action =
     | Send of message
     | Send_batch of message list
-    | Start_call of (Id.t * string * json)
-    | Notify of string * json
+    | Start_call of (Id.t * string * json option)
+    | Notify of string * json option
     | Fill_request of (Id.t * (json,int * string) result)
     | Error_without_id of int * string
 
@@ -121,20 +121,22 @@ end = struct
 
   (* Build the JSON message to send for the given {b request} *)
   let mk_request_ ~id ~meth ~params =
-    `Assoc [
+    let l = [
       "method", `String meth;
       "jsonrpc", `String "2.0";
-      "params", params;
       "id", Id.to_json id;
-    ]
+    ] in
+    let l = match params with None -> l | Some x -> ("params",x) :: l in
+    `Assoc l
 
   (* Build the JSON message to send for the given {b notification} *)
   let mk_notify_ ~meth ~params =
-    `Assoc [
+    let l = [
       "method", `String meth;
       "jsonrpc", `String "2.0";
-      "params", params;
-    ]
+    ] in
+    let l = match params with None -> l | Some x -> ("params", x) :: l in
+    `Assoc l
 
   (* Build a response message *)
   let mk_response (id:Id.t) msg : json =
@@ -256,8 +258,8 @@ end = struct
 
   type incoming = 
     | I_error of Id.t * code * string
-    | I_request of Id.t * string * json
-    | I_notify of string * json
+    | I_request of Id.t * string * json option
+    | I_notify of string * json option
     | I_response of Id.t * json
 
   type incoming_full =
@@ -289,7 +291,7 @@ end = struct
          field "id" parse_id >|= fun id ->
          I_response(id,j));
         (field "method" string >>= fun name ->
-         field "params" json >>= fun params ->
+         field_opt "params" json >>= fun params ->
          field_opt "id" parse_id >|= function
          | Some id -> I_request (id, name, params)
          | None -> I_notify (name, params))
@@ -310,8 +312,8 @@ end = struct
   type action =
     | Send of message
     | Send_batch of message list
-    | Start_call of (Id.t * string * json)
-    | Notify of string * json
+    | Start_call of (Id.t * string * json option)
+    | Notify of string * json option
     | Fill_request of (Id.t * (json,int * string) result)
     | Error_without_id of int * string
 
@@ -392,7 +394,7 @@ module Make(IO : Jsonrpc2_intf.IO)
   }
 
   and method_ = 
-    (t -> params:json -> return:((json, string) result -> unit) -> unit)
+    (t -> params:json option -> return:((json, string) result -> unit) -> unit)
   (** A method available through JSON-RPC *)
 
   let create ~ic ~oc () : t =
