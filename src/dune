@@ -1,0 +1,8 @@
+(env
+  (_ (flags :standard -warn-error -3 -safe-string)))
+
+(library
+  (name jsonrpc2)
+  (public_name jsonrpc2)
+  (flags :standard -warn-error -3)
+  (libraries yojson))

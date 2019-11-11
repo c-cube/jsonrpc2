@@ -1,0 +1,23 @@
+opam-version: "2.0"
+name: "jsonrpc2"
+version: "0.1"
+authors: ["Simon Cruanes"]
+maintainer: "simon.cruanes.2007@m4x.org"
+license: "MIT"
+description: "JSONRPC2 implementation"
+build: [
+  ["dune" "build" "@install" "-p" name "-j" jobs]
+  ["dune" "build" "@doc" "-p" name] {with-doc}
+  ["dune" "runtest" "-p" name] {with-test}
+]
+depends: [
+  "dune" { >= "1.1" }
+  "yojson" { >= "1.6" }
+  "odoc" {with-doc}
+  "ocaml" { >= "4.03.0" }
+]
+tags: [ "rpc" "jsonrpc" "jsonrcp2" ]
+homepage: "https://github.com/c-cube/jsonrpc2/"
+doc: "https://c-cube.github.io/jsonrpc2/"
+bug-reports: "https://github.com/c-cube/jsonrpc2/issues"
+dev-repo: "git+https://github.com/c-cube/jsonrpc2.git"

@@ -1,0 +1,6 @@
+
+
+(library
+  (name jsonrpc2_sync)
+  (public_name jsonrpc2-sync)
+  (libraries jsonrpc2 unix threads))

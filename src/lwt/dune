@@ -1,0 +1,5 @@
+
+(library
+  (name jsonrpc2_lwt)
+  (public_name jsonrpc2-lwt)
+  (libraries jsonrpc2 lwt lwt.unix))
