@@ -10,6 +10,8 @@ let code_method_not_found : code = (-32601)
 let code_invalid_param : code = (-32602)
 let code_internal_error : code = (-32603)
 
+let opt_map_ f = function None -> None | Some x -> Some (f x)
+
 (** {2 The protocol part, independent from IO and Transport} *)
 module Protocol : sig
   type json = J.t
@@ -377,7 +379,7 @@ end = struct
 end
 
 module Make(IO : Jsonrpc2_intf.IO)
-(*     : Jsonrpc2_intf.S with module IO = IO *)
+    : Jsonrpc2_intf.S with module IO = IO
 = struct
   module IO = IO
   module Id = Protocol.Id
@@ -407,45 +409,31 @@ module Make(IO : Jsonrpc2_intf.IO)
   let declare_method_with self ~decode_arg ~encode_res name f : unit =
     declare_method self name
       (fun self ~params ~return ->
-         match decode_arg params with
-         | Error e -> return (Error e)
-         | Ok x ->
+         match params with
+         | None ->
            (* pass [return] as a continuation to {!f} *)
-           f self ~params:x ~return:(fun y -> return (Ok (encode_res y))))
+           f self ~params:None ~return:(fun y -> return (Ok (encode_res y)))
+         | Some p ->
+           match decode_arg p with
+           | Error e -> return (Error e)
+           | Ok x ->
+             (* pass [return] as a continuation to {!f} *)
+             f self ~params:(Some x) ~return:(fun y -> return (Ok (encode_res y))))
 
   let declare_blocking_method_with self ~decode_arg ~encode_res name f : unit =
     declare_method self name
       (fun _self ~params ~return ->
-         match decode_arg params with
-         | Error e -> return (Error e)
-         | Ok x ->
-           let y = f x in
-           return (Ok (encode_res y)))
-
-  (* Is the message a proper request? *)
-  let valid_request_ msg =
-    match msg with
-    | `Assoc l ->
-      (List.mem_assoc "method" l) &&
-      (try List.assoc "id" l <> `Null with Not_found -> false)
-    | _ -> false
-
-  (* Is the message a proper notification? *)
-  let valid_notify_ msg =
-    match msg with
-    | `Assoc l ->
-      (List.mem_assoc "method" l) &&
-      (not (List.mem_assoc "id" l))
-    | _ -> false
-
-  (* Is the message a valid batch request? *)
-  let valid_batch_ msg =
-    match msg with
-    | `List l ->
-      List.for_all (fun msg -> valid_request_ msg || valid_notify_ msg) l
-    | _ -> false
+         match params with
+         | None -> return (Ok (encode_res (f None)))
+         | Some p ->
+           match decode_arg p with
+           | Error e -> return (Error e)
+           | Ok x -> return (Ok (encode_res (f (Some x)))))
 
   (** {2 Client side} *)
+
+  exception Jsonrpc2_error of int * string
+  (** Code + message *)
 
   type message = json
 
@@ -477,6 +465,36 @@ module Make(IO : Jsonrpc2_intf.IO)
     in
     send_msg_ self full_s
 
+  let send_request self ~meth ~params : _ IO.t =
+    let open IO.Infix in
+    let msg, res = request self ~meth ~params in
+    send self msg >>= function
+    | Error e -> IO.return (Error e)
+    | Ok () ->
+      IO.Future.wait res >|= fun r ->
+      match r with
+      | Ok x -> Ok x
+      | Error (code,e) -> Error (Jsonrpc2_error (code,e))
+
+  let send_notify self ~meth ~params : _ IO.t =
+    let msg = notify self ~meth ~params in
+    send self msg
+
+  let send_request_with ~encode_params ~decode_res self ~meth ~params : _ IO.t =
+    let open IO.Infix in
+    send_request self ~meth ~params:(opt_map_ encode_params params)
+    >>= function
+    | Error _ as e -> IO.return e
+    | Ok x ->
+      let r = match decode_res x with
+        | Ok x -> Ok x
+        | Error s -> Error (Jsonrpc2_error (code_invalid_request, s))
+      in
+      IO.return r
+
+  let send_notify_with ~encode_params self ~meth ~params : _ IO.t =
+    send_notify self ~meth ~params:(opt_map_ encode_params params)
+
   (* send a batch message *)
   let send_batch (self:t) (l:message list) : _ result IO.t =
     let json = J.to_string (`List l) in
@@ -485,9 +503,6 @@ module Make(IO : Jsonrpc2_intf.IO)
         (String.length json) json
     in
     send_msg_ self full_s
-
-  exception Jsonrpc2_error of int * string
-  (** Code + message *)
 
   (* bind on IO+result *)
   let (>>=?) x f =
@@ -506,7 +521,7 @@ module Make(IO : Jsonrpc2_intf.IO)
             if String.get line (String.length line-1) <> '\r' then raise Not_found;
             let i = String.index line ':' in
             if i<0 || String.get line (i+1) <> ' ' then raise Not_found;
-            String.sub line 0 i, String.sub line (i+1) (String.length line-i-1)
+            String.sub line 0 i, String.trim (String.sub line (i+1) (String.length line-i-2))
           with
           | pair -> read_headers (pair :: acc)
           | exception _ ->
@@ -551,7 +566,15 @@ module Make(IO : Jsonrpc2_intf.IO)
                 (Protocol.error self.proto code_method_not_found "method not found")
           end
         | Protocol.Notify (name,params) ->
-          send self @@ Protocol.notify self.proto ~meth:name ~params
+          begin match Hashtbl.find self.methods name with
+            | m ->
+              (* execute notification, do not process response *)
+              m self ~params ~return:(fun _ -> ());
+              IO.return (Ok ())
+            | exception Not_found ->
+              send self
+                (Protocol.error self.proto code_method_not_found "method not found")
+          end
         | Protocol.Fill_request (id, res) ->
           begin match Id.Tbl.find self.reponse_promises id with
             | promise ->
@@ -573,11 +596,8 @@ module Make(IO : Jsonrpc2_intf.IO)
       | Error End_of_file ->
         IO.return (Ok ()) (* done! *)
       | Error (Jsonrpc2_error (code, msg)) ->
-        send self (Protocol.error self.proto code msg) >>= fun _ -> loop ()
-      | Error e ->
-        send self
-          (Protocol.error self.proto 1 ("unknown error: " ^ Printexc.to_string e))
-        >>= fun _ -> loop ()
+        send self (Protocol.error self.proto code msg) >>=? fun () -> loop ()
+      | Error _ as err -> IO.return err (* exit now *)
       | Ok (_hd, msg) ->
         begin match Protocol.process_msg self.proto msg with
           | Ok actions ->

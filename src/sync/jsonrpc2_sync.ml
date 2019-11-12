@@ -15,26 +15,6 @@ module IO_sync
   end
   include Infix
 
-  module Future = struct
-    type 'a t = {
-      mutable res: 'a option;
-      on_cancel: (unit -> unit);
-    }
-    type 'a wait = 'a
-    type 'a promise = 'a t
-    let fullfill (p:_ promise) x = p.res <- Some x
-    let cancel p = p.on_cancel ()
-    let make ?(on_cancel=fun () -> ()) () =
-      let r = {res=None; on_cancel;} in
-      r, r
-
-    let wait r = match r.res with
-      | Some x -> x
-      | None -> failwith "jsonrpc2-sync: wait on unfilled promise"
-  end
-
-  type lock = Mutex.t
-  let create_lock = Mutex.create
   let with_lock lock f =
     Mutex.lock lock;
     try
@@ -44,6 +24,63 @@ module IO_sync
     with e ->
       Mutex.unlock lock;
       raise e
+
+  module Future = struct
+    type 'a state =
+      | Waiting
+      | Cancelled
+      | Done of 'a
+
+    type 'a t = {
+      mutable st: 'a state;
+      mutex: Mutex.t;
+      cond: Condition.t;
+      on_cancel: (unit -> unit);
+    }
+    type 'a wait = 'a
+    type 'a promise = 'a t
+
+    let make ?(on_cancel=fun () -> ()) () =
+      let r = {
+        st=Waiting;
+        on_cancel;
+        mutex=Mutex.create();
+        cond=Condition.create();
+      } in
+      r, r
+
+    let cancel p =
+      let call_f = with_lock p.mutex
+        (fun () ->
+           if p.st = Waiting then (
+             p.st <- Cancelled;
+             true
+           ) else false) in
+
+      if call_f then p.on_cancel ()
+
+    let fullfill (p:_ promise) x =
+      with_lock p.mutex
+        (fun () ->
+           if p.st <> Waiting then failwith "promise already fullfilled";
+           p.st <- Done x;
+           Condition.broadcast p.cond)
+
+    let rec wait r =
+      let x =
+        with_lock r.mutex
+          (fun () ->
+             if r.st = Waiting then Condition.wait r.cond r.mutex;
+             r.st)
+      in
+      match x with
+      | Done y -> y
+      | Cancelled -> failwith "cancelled"
+      | Waiting -> wait r
+  end
+
+  type lock = Mutex.t
+  let create_lock = Mutex.create
 
   type nonrec in_channel = in_channel
   type nonrec out_channel = out_channel

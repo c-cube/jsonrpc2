@@ -95,7 +95,7 @@ module type S = sig
     decode_arg:(json -> ('a, string) result) ->
     encode_res:('b -> json) ->
     string ->
-    (t -> params:'a -> return:('b -> unit) -> unit) ->
+    (t -> params:'a option -> return:('b -> unit) -> unit) ->
     unit
   (** Sugar around {!declare_method}, with automatic encoding and
       decoding of JSON values. *)
@@ -105,7 +105,7 @@ module type S = sig
     decode_arg:(json -> ('a, string) result) ->
     encode_res:('b -> json) ->
     string ->
-    ('a -> 'b) ->
+    ('a option -> 'b) ->
     unit
   (** Sugar around {!declare_method_with} when the function returns
       quickly (no scheduling in the background), with automatic encoding and
@@ -123,11 +123,11 @@ module type S = sig
   (** Message sent to the other side *)
 
   val request :
-    t -> meth:string -> params:json ->
-    message * (json, string) result IO.t
+    t -> meth:string -> params:json option ->
+    message * (json, int * string) result IO.Future.t
   (** Create a request message, for which an answer is expected. *)
 
-  val notify : t -> meth:string -> params:json -> message
+  val notify : t -> meth:string -> params:json option -> message
   (** Create a notification message, ie. no response is expected. *)
 
   val send : t -> message -> (unit, exn) result IO.t
@@ -135,6 +135,29 @@ module type S = sig
 
   val send_batch : t -> message list -> (unit, exn) result IO.t
   (** Send a batch of messages. *)
+
+  val send_request :
+    t -> meth:string -> params:json option ->
+    (json, exn) result IO.t
+  (** Combination of {!send} and {!request} *)
+
+  val send_notify:
+    t -> meth:string -> params:json option ->
+    (unit, exn) result IO.t
+  (** Combination of {!send} and {!notify} *)
+
+  val send_request_with :
+    encode_params:('a -> json) ->
+    decode_res:(json -> ('b,string) result) ->
+    t -> meth:string -> params:'a option ->
+    ('b, exn) result IO.t
+  (** Decoders + {!send_request} *)
+
+  val send_notify_with :
+    encode_params:('a -> json) ->
+    t -> meth:string -> params:'a option ->
+    (unit, exn) result IO.t
+  (** Encoder + {!send_notify} *)
 
   val run : t -> (unit, exn) result IO.t
   (** Listen for incoming messages and responses *)
