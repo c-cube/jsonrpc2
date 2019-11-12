@@ -16,6 +16,7 @@ depends: [
   "base-unix"
   "base-threads"
   "odoc" {with-doc}
+  "decoders-yojson" {with-test}
 ]
 tags: [ "rpc" "jsonrpc" "jsonrcp2" "sync" ]
 homepage: "https://github.com/c-cube/jsonrpc2/"

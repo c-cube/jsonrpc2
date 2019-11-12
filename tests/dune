@@ -1,0 +1,8 @@
+
+(executables
+  (names test_server)
+  (libraries jsonrpc2_sync decoders-yojson threads))
+
+(alias
+  (name runtest)
+  (action (run ./test_server.exe)))
