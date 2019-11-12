@@ -404,6 +404,24 @@ module Make(IO : Jsonrpc2_intf.IO)
   let declare_method (self:t) name meth : unit =
     Hashtbl.replace self.methods name meth
 
+  let declare_method_with self ~decode_arg ~encode_res name f : unit =
+    declare_method self name
+      (fun self ~params ~return ->
+         match decode_arg params with
+         | Error e -> return (Error e)
+         | Ok x ->
+           (* pass [return] as a continuation to {!f} *)
+           f self ~params:x ~return:(fun y -> return (Ok (encode_res y))))
+
+  let declare_blocking_method_with self ~decode_arg ~encode_res name f : unit =
+    declare_method self name
+      (fun _self ~params ~return ->
+         match decode_arg params with
+         | Error e -> return (Error e)
+         | Ok x ->
+           let y = f x in
+           return (Ok (encode_res y)))
+
   (* Is the message a proper request? *)
   let valid_request_ msg =
     match msg with

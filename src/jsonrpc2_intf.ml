@@ -90,6 +90,30 @@ module type S = sig
       The method, when called, {b must} at some point call its [return] paramter
       with a result. *)
 
+  val declare_method_with :
+    t ->
+    decode_arg:(json -> ('a, string) result) ->
+    encode_res:('b -> json) ->
+    string ->
+    (t -> params:'a -> return:('b -> unit) -> unit) ->
+    unit
+  (** Sugar around {!declare_method}, with automatic encoding and
+      decoding of JSON values. *)
+
+  val declare_blocking_method_with :
+    t ->
+    decode_arg:(json -> ('a, string) result) ->
+    encode_res:('b -> json) ->
+    string ->
+    ('a -> 'b) ->
+    unit
+  (** Sugar around {!declare_method_with} when the function returns
+      quickly (no scheduling in the background), with automatic encoding and
+      decoding of JSON values.
+      The function is invoked immediately and returns a value that is then
+      fed to the underlying [return] callback.
+  *)
+
   (** {3 Send requests and notifications to the other side} *)
 
   exception Jsonrpc2_error of int * string
