@@ -529,7 +529,13 @@ module Make(IO : Jsonrpc2_intf.IO)
         end
     in
     read_headers [] >>=? fun headers ->
-    begin match int_of_string (List.assoc "Content-Length" headers) with
+    let ok = match List.assoc "Content-Type" headers with
+      | "utf8" | "utf-8" -> true
+      | _ -> false
+      | exception Not_found -> true
+    in
+    if ok then (
+      match int_of_string (List.assoc "Content-Length" headers) with
       | n ->
         let buf = Bytes.make n '\000' in
         IO.read_exact self.ic buf n >>=? fun () ->
@@ -540,7 +546,9 @@ module Make(IO : Jsonrpc2_intf.IO)
         end
       | exception _ ->
         IO.return @@ Error (Jsonrpc2_error(code_parse_error, "missing Content-Length' header"))
-    end
+    ) else (
+      IO.return @@ Error (Jsonrpc2_error(code_invalid_request, "content-type must be 'utf-8'"))
+    )
 
   (* execute actions demanded by the protocole *)
   let rec exec_actions (self:t) l : _ result IO.t =

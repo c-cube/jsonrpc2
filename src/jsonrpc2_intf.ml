@@ -65,6 +65,9 @@ module type IO = sig
   (** write to the channel. *)
 end
 
+(** {2 Main Interface} *)
+
+(** Signature for a JSONRPC-2 implementation *)
 module type S = sig
   module IO : IO
 
