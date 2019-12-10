@@ -1,5 +1,5 @@
 
-module J = Yojson.Basic
+module J = Yojson.Safe
 
 type 'a printer = Format.formatter -> 'a -> unit
 

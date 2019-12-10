@@ -1,4 +1,4 @@
-module J = Decoders_yojson.Basic
+module J = Decoders_yojson.Safe
 module R = Jsonrpc2_sync
 
 let debug = ref (try ignore (Sys.getenv "DEBUG"); true with _ -> false)
